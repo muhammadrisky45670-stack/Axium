@@ -18,6 +18,7 @@ end
 
 local CONFIG = getgenv().AxiumConfig or {}
 CONFIG.Acrylic = CONFIG.Acrylic ~= false -- default true
+CONFIG.AllowNamecallHook = CONFIG.AllowNamecallHook == true -- default false: anti-cheat game mendeteksi hook namecall
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -350,11 +351,70 @@ local SpyBox = Tabs.Spy:AddParagraph({
 
 local spyPanel = panel(Tabs.Spy, "Left", "Spy")
 
+local function formatArgs(args)
+    if #args == 0 then return "No Arguments" end
+    local out = {}
+    for index, value in ipairs(args) do
+        out[#out + 1] = "[" .. index .. "] (" .. type(value) .. ") = " .. tostring(value)
+    end
+    return table.concat(out, "\n")
+end
+
+-- Hook __namecall TIDAK dipasang saat load: game ini mendeteksinya dan kick
+-- ("namecallInstance detector", Error 267). Hook hanya dipasang saat toggle
+-- diminta DAN CONFIG.AllowNamecallHook == true.
+local spyInstalled = false
+
+local function ensureSpyHook()
+    if spyInstalled then return true end
+
+    if type(getrawmetatable) ~= "function" or type(hookmetamethod) ~= "function" then
+        logOutput("Executor tidak mendukung hookmetamethod; spy native tidak tersedia.")
+        return false
+    end
+
+    if CONFIG.AllowNamecallHook ~= true then
+        logOutput("Remote Spy diblokir untuk keamanan: hook namecall memicu anti-cheat game.")
+        logOutput("Kalau tetap mau: getgenv().AxiumConfig.AllowNamecallHook = true lalu jalankan ulang hub.")
+        return false
+    end
+
+    local previous
+    local ok, err = pcall(function()
+        previous = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            if isSpyActive and (method == "FireServer" or method == "InvokeServer") then
+                local entry = "[" .. method .. "] " .. tostring(self) .. "\n"
+                    .. formatArgs({ ... }) .. "\n-----------------"
+                task.spawn(function()
+                    spyLines[#spyLines + 1] = entry
+                    if #spyLines > 100 then table.remove(spyLines, 1) end
+                    pcall(function() SpyBox:SetDesc(table.concat(spyLines, "\n")) end)
+                end)
+            end
+            return previous(self, ...)
+        end)
+    end)
+
+    if not ok or type(previous) ~= "function" then
+        logOutput("Gagal memasang hook: " .. tostring(err))
+        return false
+    end
+
+    spyInstalled = true
+    logOutput("Remote Spy dipasang - BERISIKO terdeteksi anti-cheat.")
+    return true
+end
+
 spyPanel:AddToggle("SpyActive", {
-    Title = "Activate Remote Spy",
-    Description = "Rekam FireServer / InvokeServer",
+    Title = "Activate Remote Spy (risky)",
+    Description = "Hook namecall bisa memicu kick anti-cheat. Default diblokir.",
     Default = false,
     Callback = function(state)
+        if state and not ensureSpyHook() then
+            if Options and Options.SpyActive then Options.SpyActive:SetValue(false) end
+            return
+        end
         isSpyActive = state
         logOutput(state and "Spy diaktifkan." or "Spy dimatikan.")
     end,
@@ -367,32 +427,6 @@ spyPanel:AddButton({
         pcall(function() SpyBox:SetDesc("Logs cleared.") end)
     end,
 })
-
-local function formatArgs(args)
-    if #args == 0 then return "No Arguments" end
-    local out = {}
-    for index, value in ipairs(args) do
-        out[#out + 1] = "[" .. index .. "] (" .. type(value) .. ") = " .. tostring(value)
-    end
-    return table.concat(out, "\n")
-end
-
-if type(getrawmetatable) == "function" and type(hookmetamethod) == "function" then
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        if isSpyActive and (method == "FireServer" or method == "InvokeServer") then
-            local entry = "[" .. method .. "] " .. tostring(self) .. "\n"
-                .. formatArgs({ ... }) .. "\n-----------------"
-            task.spawn(function()
-                spyLines[#spyLines + 1] = entry
-                if #spyLines > 100 then table.remove(spyLines, 1) end
-                pcall(function() SpyBox:SetDesc(table.concat(spyLines, "\n")) end)
-            end)
-        end
-        return oldNamecall(self, ...)
-    end)
-end
 
 --========================================
 -- ADVANCED (lazy fetch Dex / Cobalt)

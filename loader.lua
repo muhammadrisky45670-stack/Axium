@@ -19,7 +19,7 @@
 ]]
 
 local CONFIG = {
-    Repo = "Axium", -- TODO: ganti dengan repo kamu
+    Repo = "muhammadrisky45670-stack/Axium", -- TODO: ganti dengan repo kamu
     Branch = "main",
     Entry = "main.lua",
 

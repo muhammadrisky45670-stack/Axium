@@ -186,6 +186,8 @@ local function makeEmbedHost(tab, height)
     host.BorderSizePixel = 0
     host.ClipsDescendants = true
     host.Size = UDim2.new(1, -10, 0, height or 320)
+    host.LayoutOrder = 999
+    host.Visible = false
     host.Parent = container
 
     local corner = Instance.new("UICorner")
@@ -272,7 +274,14 @@ local function loadAndEmbed(file, host, label)
         return false
     end
 
+    host.Visible = true
+    task.wait()
     local count = embedGuis(guis, host)
+    if count <= 0 then
+        host.Visible = false
+    else
+        pcall(function() Window:Maximize(true, true, true) end)
+    end
     logOutput(label .. " ditanam di tab (" .. count .. " elemen, " .. #guis .. " ScreenGui).")
     return count > 0
 end

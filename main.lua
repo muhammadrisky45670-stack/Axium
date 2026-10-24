@@ -107,7 +107,6 @@ local Tabs = {
     Output = Window:AddTab({ Title = "Output", Icon = "terminal" }),
     Explorer = Window:AddTab({ Title = "Explorer", Icon = "folder" }),
     Spy = Window:AddTab({ Title = "Remote Spy", Icon = "eye" }),
-    Advanced = Window:AddTab({ Title = "Advanced", Icon = "layout" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
 
@@ -125,6 +124,157 @@ local function panel(tab, side, title)
         end
     end
     return tab
+end
+
+--========================================
+-- EMBED (Dex / Cobalt di dalam window Axium)
+--========================================
+local function guiParents()
+    local parents = { CoreGui }
+    if type(gethui) == "function" then
+        local ok, hidden = pcall(gethui)
+        if ok and hidden then table.insert(parents, 1, hidden) end
+    end
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then parents[#parents + 1] = playerGui end
+    return parents
+end
+
+local function snapshotGuis()
+    local set = {}
+    for _, parent in ipairs(guiParents()) do
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ScreenGui") then set[child] = true end
+        end
+    end
+    return set
+end
+
+local function newGuisSince(before)
+    local found = {}
+    for _, parent in ipairs(guiParents()) do
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ScreenGui") and not before[child] then
+                found[#found + 1] = child
+            end
+        end
+    end
+    return found
+end
+
+local function waitForNewGuis(before, timeout)
+    local deadline = os.clock() + (timeout or 4)
+    repeat
+        local found = newGuisSince(before)
+        if #found > 0 then return found end
+        task.wait(0.2)
+    until os.clock() > deadline
+    return newGuisSince(before)
+end
+
+local function tabContainer(tab)
+    return tab.Container or tab.ScrollFrame or tab.Content or nil
+end
+
+local function makeEmbedHost(tab, height)
+    local container = tabContainer(tab)
+    if not container then return nil end
+
+    local host = Instance.new("Frame")
+    host.Name = "AxiumEmbedHost"
+    host.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
+    host.BorderSizePixel = 0
+    host.ClipsDescendants = true
+    host.Size = UDim2.new(1, -10, 0, height or 320)
+    host.Parent = container
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = host
+
+    return host
+end
+
+local function embedGuis(guis, host)
+    if not host then return 0 end
+
+    local maxWidth, maxHeight = 0, 0
+    for _, gui in ipairs(guis) do
+        for _, child in ipairs(gui:GetChildren()) do
+            if child:IsA("GuiObject") then
+                local absolute = child.AbsoluteSize
+                maxWidth = math.max(maxWidth, absolute.X)
+                maxHeight = math.max(maxHeight, absolute.Y)
+            end
+        end
+    end
+
+    local embedded = 0
+    for _, gui in ipairs(guis) do
+        for _, child in ipairs(gui:GetChildren()) do
+            if child:IsA("GuiObject") then
+                child.Parent = host
+                child.AnchorPoint = Vector2.new(0, 0)
+                child.Position = UDim2.fromOffset(0, 0)
+                embedded = embedded + 1
+            end
+        end
+        gui.Enabled = false
+    end
+
+    if maxWidth > 0 and maxHeight > 0 then
+        local availableWidth = host.AbsoluteSize.X
+        if availableWidth <= 0 then availableWidth = 560 end
+        local availableHeight = host.AbsoluteSize.Y
+        if availableHeight > 0 then
+            local scale = math.min(availableWidth / maxWidth, availableHeight / maxHeight, 1)
+            if scale > 0 and scale < 1 then
+                local uiScale = Instance.new("UIScale")
+                uiScale.Scale = scale
+                uiScale.Parent = host
+            end
+        end
+    end
+
+    return embedded
+end
+
+local function loadAndEmbed(file, host, label)
+    if not host then
+        logOutput(label .. ": tab ini tidak bisa menampung, pakai jendela sendiri.")
+        return false
+    end
+
+    local before = snapshotGuis()
+    logOutput("Mengambil " .. file .. "...")
+
+    local ok, source = pcall(AxiumFetch, file)
+    if not ok or type(source) ~= "string" then
+        logOutput("Gagal mengambil " .. file .. ": " .. tostring(source))
+        return false
+    end
+
+    local chunk, compileError = loadstring(source)
+    if not chunk then
+        logOutput(file .. " gagal dikompilasi: " .. tostring(compileError))
+        return false
+    end
+
+    local ran, runError = pcall(chunk)
+    if not ran then
+        logOutput(file .. " error: " .. tostring(runError))
+        return false
+    end
+
+    local guis = waitForNewGuis(before, 4)
+    if #guis == 0 then
+        logOutput(label .. ": GUI tidak terdeteksi, pakai jendela sendiri.")
+        return false
+    end
+
+    local count = embedGuis(guis, host)
+    logOutput(label .. " ditanam di tab (" .. count .. " elemen, " .. #guis .. " ScreenGui).")
+    return count > 0
 end
 
 --========================================
@@ -338,6 +488,25 @@ explorerPanel:AddButton({
     end,
 })
 
+-- Dex ditanam di tab ini (bukan jendela baru)
+local dexHost = makeEmbedHost(Tabs.Explorer, 320)
+local dexEmbedded = false
+
+Tabs.Explorer:AddToggle("DexEmbed", {
+    Title = "Tanam Dex Explorer",
+    Description = "Dimuat ke dalam window Axium, tanpa jendela terpisah",
+    Default = false,
+    Callback = function(state)
+        if not state or dexEmbedded then return end
+        dexEmbedded = true
+        task.spawn(function()
+            if not loadAndEmbed("lib/dex.lua", dexHost, "Dex") then
+                logOutput("Dex tampil sebagai jendela sendiri.")
+            end
+        end)
+    end,
+})
+
 --========================================
 -- REMOTE SPY (native, ringan)
 --========================================
@@ -428,86 +597,20 @@ spyPanel:AddButton({
     end,
 })
 
---========================================
--- ADVANCED (lazy fetch Dex / Cobalt)
---========================================
-local function runRemoteBundle(file, onLoaded)
-    task.spawn(function()
-        logOutput("Mengambil " .. file .. " dari repo...")
-        local ok, source = pcall(AxiumFetch, file)
-        if not ok or type(source) ~= "string" then
-            logOutput("Gagal mengambil " .. file .. ": " .. tostring(source))
-            return
-        end
+-- Cobalt ditanam di tab Spy (bukan jendela baru)
+local cobaltHost = makeEmbedHost(Tabs.Spy, 300)
+local cobaltEmbedded = false
 
-        local chunk, compileError = loadstring(source)
-        if not chunk then
-            logOutput(file .. " gagal dikompilasi: " .. tostring(compileError))
-            return
-        end
-
-        local ran, runError = pcall(chunk)
-        if not ran then
-            logOutput(file .. " error saat dijalankan: " .. tostring(runError))
-            return
-        end
-
-        task.wait(1.5)
-        onLoaded()
-    end)
-end
-
-local advancedPanel = panel(Tabs.Advanced, "Left", "Tools")
-local isDexLoaded, dexGui = false, nil
-local isCobaltLoaded, cobaltGui = false, nil
-
-advancedPanel:AddToggle("DexToggle", {
-    Title = "Launch Advanced Dex UI",
-    Description = "Dex Explorer penuh (diunduh saat dinyalakan)",
+Tabs.Spy:AddToggle("CobaltEmbed", {
+    Title = "Tanam Cobalt Spy",
+    Description = "Peringatan: Cobalt memasang hook namecall, anti-cheat game bisa kick",
     Default = false,
     Callback = function(state)
-        if not state then
-            if dexGui then dexGui.Enabled = false end
-            return
-        end
-        if isDexLoaded then
-            if dexGui then dexGui.Enabled = true end
-            return
-        end
-        isDexLoaded = true
-        runRemoteBundle("lib/dex.lua", function()
-            dexGui = CoreGui:FindFirstChild("Dex") or CoreGui:FindFirstChild("Dex Explorer")
-            if dexGui then
-                dexGui.Enabled = true
-                logOutput("Dex siap.")
-            else
-                logOutput("Dex tidak terdeteksi di CoreGui (executor memblokir?).")
-            end
-        end)
-    end,
-})
-
-advancedPanel:AddToggle("CobaltToggle", {
-    Title = "Launch Advanced Cobalt Spy",
-    Description = "Cobalt Remote Spy penuh (diunduh saat dinyalakan)",
-    Default = false,
-    Callback = function(state)
-        if not state then
-            if cobaltGui then cobaltGui.Enabled = false end
-            return
-        end
-        if isCobaltLoaded then
-            if cobaltGui then cobaltGui.Enabled = true end
-            return
-        end
-        isCobaltLoaded = true
-        runRemoteBundle("lib/cobalt.lua", function()
-            cobaltGui = CoreGui:FindFirstChild("SimpleSpy2") or CoreGui:FindFirstChild("SimpleSpy")
-            if cobaltGui then
-                cobaltGui.Enabled = true
-                logOutput("Cobalt siap.")
-            else
-                logOutput("Cobalt tidak terdeteksi di CoreGui (executor memblokir?).")
+        if not state or cobaltEmbedded then return end
+        cobaltEmbedded = true
+        task.spawn(function()
+            if not loadAndEmbed("lib/cobalt.lua", cobaltHost, "Cobalt") then
+                logOutput("Cobalt tampil sebagai jendela sendiri.")
             end
         end)
     end,

@@ -19,7 +19,7 @@
 ]]
 
 local CONFIG = {
-    Repo = "USERNAME/REPO", -- TODO: ganti dengan repo kamu
+    Repo = "Axium", -- TODO: ganti dengan repo kamu
     Branch = "main",
     Entry = "main.lua",
 

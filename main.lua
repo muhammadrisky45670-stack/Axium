@@ -111,6 +111,7 @@ local Tabs = {
 }
 
 local Options = Fluent.Options
+local logOutput -- diisi setelah tab Output dibuat
 
 -- Fluent 1.1.0: Tab:AddSection(title) - Fluent master: Tab:AddLeftGroupbox(title)
 -- Helper ini coba semuanya, lalu jatuh ke tab langsung kalau tidak ada.
@@ -296,7 +297,7 @@ local OutputBox = Tabs.Output:AddParagraph({
 
 local outputLines = {}
 
-local function logOutput(text)
+logOutput = function(text)
     outputLines[#outputLines + 1] = "> " .. tostring(text)
     if #outputLines > 200 then table.remove(outputLines, 1) end
     pcall(function() OutputBox:SetDesc(table.concat(outputLines, "\n")) end)

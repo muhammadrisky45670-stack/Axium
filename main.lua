@@ -90,7 +90,7 @@ if not okInterfaceManager then fatal("load lib/fluent_interfacemanager.lua", Int
 local okWindow, Window = pcall(function()
     return Fluent:CreateWindow({
         Title = "Axium",
-        SubTitle = "by Luvio · Fluent " .. tostring(Fluent.Version),
+        SubTitle = "by Luvio - Fluent " .. tostring(Fluent.Version),
         TabWidth = 160,
         Size = UDim2.fromOffset(600, 470),
         Acrylic = CONFIG.Acrylic,
@@ -111,6 +111,20 @@ local Tabs = {
 }
 
 local Options = Fluent.Options
+
+-- Fluent 1.1.0: Tab:AddSection(title) - Fluent master: Tab:AddLeftGroupbox(title)
+-- Helper ini coba semuanya, lalu jatuh ke tab langsung kalau tidak ada.
+local function panel(tab, side, title)
+    local candidates = { "Add" .. side .. "Groupbox", "AddLeftGroupbox", "AddSection", "AddGroupbox" }
+    for _, name in ipairs(candidates) do
+        local fn = tab[name]
+        if type(fn) == "function" then
+            local ok, object = pcall(fn, tab, title)
+            if ok and object then return object end
+        end
+    end
+    return tab
+end
 
 --========================================
 -- OUTPUT
@@ -141,13 +155,13 @@ Tabs.Output:AddButton({
 --========================================
 -- SCRIPTS
 --========================================
-local utilityGroup = Tabs.Scripts:AddLeftGroupbox("Utilitas")
-local serverGroup = Tabs.Scripts:AddRightGroupbox("Server")
+local utilityPanel = panel(Tabs.Scripts, "Left", "Utilitas")
+local serverPanel = panel(Tabs.Scripts, "Right", "Server")
 
 local recorder = { active = false, data = {} }
 
-utilityGroup:AddButton({
-    Title = "CFrame Recorder — Start",
+utilityPanel:AddButton({
+    Title = "CFrame Recorder â€” Start",
     Description = "Rekam posisi tiap 0.5 dtk (maks 5 menit)",
     Callback = function()
         if recorder.active then
@@ -175,8 +189,8 @@ utilityGroup:AddButton({
     end,
 })
 
-utilityGroup:AddButton({
-    Title = "CFrame Recorder — Stop & Copy",
+utilityPanel:AddButton({
+    Title = "CFrame Recorder â€” Stop & Copy",
     Description = "Hentikan rekaman, salin hasil ke clipboard",
     Callback = function()
         recorder.active = false
@@ -191,7 +205,7 @@ utilityGroup:AddButton({
     end,
 })
 
-utilityGroup:AddButton({
+utilityPanel:AddButton({
     Title = "Anti-Cheat Scanner",
     Description = "Cari RemoteEvent bernama adonis/anticheat",
     Callback = function()
@@ -210,7 +224,7 @@ utilityGroup:AddButton({
     end,
 })
 
-utilityGroup:AddButton({
+utilityPanel:AddButton({
     Title = "Adonis Bypass",
     Description = "Cek dukungan getreg untuk mematikan proteksi",
     Callback = function()
@@ -223,7 +237,7 @@ utilityGroup:AddButton({
     end,
 })
 
-serverGroup:AddButton({
+serverPanel:AddButton({
     Title = "Rejoin Server",
     Description = "Masuk kembali ke server yang sama",
     Callback = function()
@@ -253,7 +267,7 @@ Tabs.Explorer:AddInput("TargetPath", {
     Callback = function(text) targetPath = text end,
 })
 
-local explorerGroup = Tabs.Explorer:AddLeftGroupbox("Aksi")
+local explorerPanel = panel(Tabs.Explorer, "Left", "Aksi")
 
 local function resolvePath(pathString)
     local success, result = pcall(function()
@@ -269,7 +283,7 @@ local function resolvePath(pathString)
     return success and result or nil
 end
 
-explorerGroup:AddButton({
+explorerPanel:AddButton({
     Title = "Teleport To",
     Callback = function()
         local object = resolvePath(targetPath)
@@ -286,7 +300,7 @@ explorerGroup:AddButton({
     end,
 })
 
-explorerGroup:AddButton({
+explorerPanel:AddButton({
     Title = "View Camera",
     Callback = function()
         local object = resolvePath(targetPath)
@@ -301,7 +315,7 @@ explorerGroup:AddButton({
     end,
 })
 
-explorerGroup:AddButton({
+explorerPanel:AddButton({
     Title = "Copy Path",
     Callback = function()
         local object = resolvePath(targetPath)
@@ -312,7 +326,7 @@ explorerGroup:AddButton({
     end,
 })
 
-explorerGroup:AddButton({
+explorerPanel:AddButton({
     Title = "Destroy Instance",
     Callback = function()
         local object = resolvePath(targetPath)
@@ -334,9 +348,9 @@ local SpyBox = Tabs.Spy:AddParagraph({
     Content = "...",
 })
 
-local spyGroup = Tabs.Spy:AddLeftGroupbox("Spy")
+local spyPanel = panel(Tabs.Spy, "Left", "Spy")
 
-spyGroup:AddToggle("SpyActive", {
+spyPanel:AddToggle("SpyActive", {
     Title = "Activate Remote Spy",
     Description = "Rekam FireServer / InvokeServer",
     Default = false,
@@ -346,7 +360,7 @@ spyGroup:AddToggle("SpyActive", {
     end,
 })
 
-spyGroup:AddButton({
+spyPanel:AddButton({
     Title = "Clear Spy Logs",
     Callback = function()
         spyLines = {}
@@ -409,11 +423,11 @@ local function runRemoteBundle(file, onLoaded)
     end)
 end
 
-local advancedGroup = Tabs.Advanced:AddLeftGroupbox("Tools")
+local advancedPanel = panel(Tabs.Advanced, "Left", "Tools")
 local isDexLoaded, dexGui = false, nil
 local isCobaltLoaded, cobaltGui = false, nil
 
-advancedGroup:AddToggle("DexToggle", {
+advancedPanel:AddToggle("DexToggle", {
     Title = "Launch Advanced Dex UI",
     Description = "Dex Explorer penuh (diunduh saat dinyalakan)",
     Default = false,
@@ -439,7 +453,7 @@ advancedGroup:AddToggle("DexToggle", {
     end,
 })
 
-advancedGroup:AddToggle("CobaltToggle", {
+advancedPanel:AddToggle("CobaltToggle", {
     Title = "Launch Advanced Cobalt Spy",
     Description = "Cobalt Remote Spy penuh (diunduh saat dinyalakan)",
     Default = false,
@@ -489,7 +503,7 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 Window:SelectTab(1)
 pcall(function() SaveManager:LoadAutoloadConfig() end)
 
-print("[Axium] UI siap — tab dan fitur terpasang.")
+print("[Axium] UI siap â€” tab dan fitur terpasang.")
 
 Fluent:Notify({
     Title = "Axium",

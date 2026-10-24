@@ -4,8 +4,10 @@
         lib/fluent.lua                 Fluent v1.1.0
         lib/fluent_savemanager.lua     config system
         lib/fluent_interfacemanager.lua tema & transparansi
-        lib/dex.lua                    lazy, hanya saat toggle ON
-        lib/cobalt.lua                 lazy, hanya saat toggle ON
+
+    Explorer dan Remote Spy sepenuhnya native (tanpa Dex/Cobalt): semua tombol
+    dan panel memakai elemen Fluent di dalam window ini. lib/dex.lua dan
+    lib/cobalt.lua masih ada di repo kalau nanti dibutuhkan, tapi tidak dimuat.
 
     Catatan Acrylic: blur bikin UI lebih enak dilihat tapi bisa terdeteksi
     beberapa anti-cheat. Matikan lewat CONFIG.Acrylic = false kalau ragu.
@@ -128,163 +130,45 @@ local function panel(tab, side, title)
 end
 
 --========================================
--- EMBED (Dex / Cobalt di dalam window Axium)
+-- HELPER INSTANCE (explorer native)
 --========================================
-local function guiParents()
-    local parents = { CoreGui }
-    if type(gethui) == "function" then
-        local ok, hidden = pcall(gethui)
-        if ok and hidden then table.insert(parents, 1, hidden) end
+local currentObject = nil
+
+local function describeInstance(object)
+    if not object then
+        return "Belum ada instance yang dipilih.\nKetik path lalu tekan 'Muat Path'."
     end
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if playerGui then parents[#parents + 1] = playerGui end
-    return parents
+
+    local lines = {
+        "Nama    : " .. object.Name,
+        "Kelas   : " .. object.ClassName,
+        "Path    : " .. object:GetFullName(),
+        "Anak    : " .. tostring(#object:GetChildren()),
+    }
+
+    if object:IsA("BasePart") then
+        local position = object.Position
+        local size = object.Size
+        lines[#lines + 1] = string.format("Posisi  : %.1f, %.1f, %.1f", position.X, position.Y, position.Z)
+        lines[#lines + 1] = string.format("Ukuran  : %.1f, %.1f, %.1f", size.X, size.Y, size.Z)
+        lines[#lines + 1] = "Anchored: " .. tostring(object.Anchored)
+        lines[#lines + 1] = string.format("Transparansi: %.2f", object.Transparency)
+    end
+
+    return table.concat(lines, "\n")
 end
 
-local function snapshotGuis()
-    local set = {}
-    for _, parent in ipairs(guiParents()) do
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("ScreenGui") then set[child] = true end
-        end
-    end
-    return set
+local function childLabel(child)
+    return child.Name .. " [" .. child.ClassName .. "]"
 end
 
-local function newGuisSince(before)
-    local found = {}
-    for _, parent in ipairs(guiParents()) do
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("ScreenGui") and not before[child] then
-                found[#found + 1] = child
-            end
-        end
+local function childFromLabel(object, label)
+    if not object or type(label) ~= "string" then return nil end
+    local name = label:match("^(.-) %[") or label
+    for _, child in ipairs(object:GetChildren()) do
+        if child.Name == name then return child end
     end
-    return found
-end
-
-local function waitForNewGuis(before, timeout)
-    local deadline = os.clock() + (timeout or 4)
-    repeat
-        local found = newGuisSince(before)
-        if #found > 0 then return found end
-        task.wait(0.2)
-    until os.clock() > deadline
-    return newGuisSince(before)
-end
-
-local function tabContainer(tab)
-    return tab.Container or tab.ScrollFrame or tab.Content or nil
-end
-
-local function makeEmbedHost(tab, height)
-    local container = tabContainer(tab)
-    if not container then return nil end
-
-    local host = Instance.new("Frame")
-    host.Name = "AxiumEmbedHost"
-    host.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
-    host.BorderSizePixel = 0
-    host.ClipsDescendants = true
-    host.Size = UDim2.new(1, -10, 0, height or 320)
-    host.LayoutOrder = 999
-    host.Visible = false
-    host.Parent = container
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = host
-
-    return host
-end
-
-local function embedGuis(guis, host)
-    if not host then return 0 end
-
-    local maxWidth, maxHeight = 0, 0
-    for _, gui in ipairs(guis) do
-        for _, child in ipairs(gui:GetChildren()) do
-            if child:IsA("GuiObject") then
-                local absolute = child.AbsoluteSize
-                maxWidth = math.max(maxWidth, absolute.X)
-                maxHeight = math.max(maxHeight, absolute.Y)
-            end
-        end
-    end
-
-    local embedded = 0
-    for _, gui in ipairs(guis) do
-        for _, child in ipairs(gui:GetChildren()) do
-            if child:IsA("GuiObject") then
-                child.Parent = host
-                child.AnchorPoint = Vector2.new(0, 0)
-                child.Position = UDim2.fromOffset(0, 0)
-                embedded = embedded + 1
-            end
-        end
-        gui.Enabled = false
-    end
-
-    if maxWidth > 0 and maxHeight > 0 then
-        local availableWidth = host.AbsoluteSize.X
-        if availableWidth <= 0 then availableWidth = 560 end
-        local availableHeight = host.AbsoluteSize.Y
-        if availableHeight > 0 then
-            local scale = math.min(availableWidth / maxWidth, availableHeight / maxHeight, 1)
-            if scale > 0 and scale < 1 then
-                local uiScale = Instance.new("UIScale")
-                uiScale.Scale = scale
-                uiScale.Parent = host
-            end
-        end
-    end
-
-    return embedded
-end
-
-local function loadAndEmbed(file, host, label)
-    if not host then
-        logOutput(label .. ": tab ini tidak bisa menampung, pakai jendela sendiri.")
-        return false
-    end
-
-    local before = snapshotGuis()
-    logOutput("Mengambil " .. file .. "...")
-
-    local ok, source = pcall(AxiumFetch, file)
-    if not ok or type(source) ~= "string" then
-        logOutput("Gagal mengambil " .. file .. ": " .. tostring(source))
-        return false
-    end
-
-    local chunk, compileError = loadstring(source)
-    if not chunk then
-        logOutput(file .. " gagal dikompilasi: " .. tostring(compileError))
-        return false
-    end
-
-    local ran, runError = pcall(chunk)
-    if not ran then
-        logOutput(file .. " error: " .. tostring(runError))
-        return false
-    end
-
-    local guis = waitForNewGuis(before, 4)
-    if #guis == 0 then
-        logOutput(label .. ": GUI tidak terdeteksi, pakai jendela sendiri.")
-        return false
-    end
-
-    host.Visible = true
-    task.wait()
-    local count = embedGuis(guis, host)
-    if count <= 0 then
-        host.Visible = false
-    else
-        pcall(function() Window:Maximize(true, true, true) end)
-    end
-    logOutput(label .. " ditanam di tab (" .. count .. " elemen, " .. #guis .. " ScreenGui).")
-    return count > 0
+    return nil
 end
 
 --========================================
@@ -418,7 +302,7 @@ serverPanel:AddButton({
 --========================================
 local targetPath = ""
 
-Tabs.Explorer:AddInput("TargetPath", {
+local targetPathInput = Tabs.Explorer:AddInput("TargetPath", {
     Title = "Target Instance Path",
     Description = "Contoh: Workspace.Part",
     Default = "",
@@ -447,7 +331,7 @@ end
 explorerPanel:AddButton({
     Title = "Teleport To",
     Callback = function()
-        local object = resolvePath(targetPath)
+        local object = currentObject or resolvePath(targetPath)
         if object and (object:IsA("BasePart") or object:IsA("Model")) then
             local position = object:IsA("Model") and object:GetPivot().Position or object.Position
             local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -464,7 +348,7 @@ explorerPanel:AddButton({
 explorerPanel:AddButton({
     Title = "View Camera",
     Callback = function()
-        local object = resolvePath(targetPath)
+        local object = currentObject or resolvePath(targetPath)
         if object then
             workspace.CurrentCamera.CameraSubject = object
             logOutput("Camera melihat ke " .. object.Name)
@@ -479,7 +363,7 @@ explorerPanel:AddButton({
 explorerPanel:AddButton({
     Title = "Copy Path",
     Callback = function()
-        local object = resolvePath(targetPath)
+        local object = currentObject or resolvePath(targetPath)
         if object and type(setclipboard) == "function" then
             setclipboard(object:GetFullName())
             logOutput("Path disalin: " .. object:GetFullName())
@@ -490,7 +374,7 @@ explorerPanel:AddButton({
 explorerPanel:AddButton({
     Title = "Destroy Instance",
     Callback = function()
-        local object = resolvePath(targetPath)
+        local object = currentObject or resolvePath(targetPath)
         if object then
             object:Destroy()
             logOutput("Objek dihancurkan.")
@@ -498,22 +382,92 @@ explorerPanel:AddButton({
     end,
 })
 
--- Dex ditanam di tab ini (bukan jendela baru)
-local dexHost = makeEmbedHost(Tabs.Explorer, 320)
-local dexEmbedded = false
+-- Browser instance native (tanpa Dex)
+local refreshingChildren = false
+local childDropdown = nil
+local detailBox = nil
+local refreshChildren
 
-Tabs.Explorer:AddToggle("DexEmbed", {
-    Title = "Tanam Dex Explorer",
-    Description = "Dimuat ke dalam window Axium, tanpa jendela terpisah",
-    Default = false,
-    Callback = function(state)
-        if not state or dexEmbedded then return end
-        dexEmbedded = true
-        task.spawn(function()
-            if not loadAndEmbed("lib/dex.lua", dexHost, "Dex") then
-                logOutput("Dex tampil sebagai jendela sendiri.")
-            end
-        end)
+local goTo
+
+refreshChildren = function(object)
+    if not childDropdown then return end
+    local values = {}
+    if object then
+        for _, child in ipairs(object:GetChildren()) do
+            values[#values + 1] = childLabel(child)
+        end
+    end
+    if #values == 0 then values = { "(tidak ada anak)" } end
+
+    refreshingChildren = true
+    pcall(function() childDropdown:SetValues(values) end)
+    refreshingChildren = false
+end
+
+goTo = function(object)
+    currentObject = object
+
+    if targetPathInput and object then
+        pcall(function() targetPathInput:SetValue(object:GetFullName()) end)
+    end
+
+    if detailBox then
+        pcall(function() detailBox:SetDesc(describeInstance(object)) end)
+    end
+
+    refreshChildren(object)
+end
+
+local browserPanel = panel(Tabs.Explorer, "Left", "Browser")
+
+browserPanel:AddButton({
+    Title = "Muat Path",
+    Description = "Buka instance dari kolom Target Instance Path",
+    Callback = function()
+        local object = currentObject or resolvePath(targetPath)
+        if object then
+            goTo(object)
+        else
+            logOutput("Path tidak ditemukan: " .. tostring(targetPath))
+        end
+    end,
+})
+
+browserPanel:AddButton({
+    Title = "Ke Parent",
+    Description = "Naik satu tingkat dari instance aktif",
+    Callback = function()
+        if currentObject and currentObject.Parent then
+            goTo(currentObject.Parent)
+        end
+    end,
+})
+
+browserPanel:AddButton({
+    Title = "Workspace",
+    Callback = function()
+        goTo(workspace)
+    end,
+})
+
+detailBox = Tabs.Explorer:AddParagraph({
+    Title = "Detail Instance",
+    Content = "Belum ada instance yang dipilih.",
+})
+
+childDropdown = Tabs.Explorer:AddDropdown("ExplorerChildren", {
+    Title = "Anak Instance",
+    Description = "Pilih untuk masuk ke level berikutnya",
+    Values = { "(tidak ada anak)" },
+    Default = "(tidak ada anak)",
+    Multi = false,
+    Callback = function(value)
+        if refreshingChildren then return end
+        local child = childFromLabel(currentObject, value)
+        if child then
+            goTo(child)
+        end
     end,
 })
 
@@ -607,22 +561,22 @@ spyPanel:AddButton({
     end,
 })
 
--- Cobalt ditanam di tab Spy (bukan jendela baru)
-local cobaltHost = makeEmbedHost(Tabs.Spy, 300)
-local cobaltEmbedded = false
+-- Aksi untuk spy native
+local spyActions = panel(Tabs.Spy, "Left", "Spy Tools")
 
-Tabs.Spy:AddToggle("CobaltEmbed", {
-    Title = "Tanam Cobalt Spy",
-    Description = "Peringatan: Cobalt memasang hook namecall, anti-cheat game bisa kick",
-    Default = false,
-    Callback = function(state)
-        if not state or cobaltEmbedded then return end
-        cobaltEmbedded = true
-        task.spawn(function()
-            if not loadAndEmbed("lib/cobalt.lua", cobaltHost, "Cobalt") then
-                logOutput("Cobalt tampil sebagai jendela sendiri.")
-            end
-        end)
+spyActions:AddButton({
+    Title = "Copy Remote Terakhir",
+    Description = "Salin entri spy terakhir ke clipboard",
+    Callback = function()
+        local last = spyLines[#spyLines]
+        if not last then
+            logOutput("Belum ada remote yang terekam.")
+            return
+        end
+        if type(setclipboard) == "function" then
+            setclipboard(last)
+        end
+        logOutput("Remote terakhir disalin ke clipboard.")
     end,
 })
 
@@ -641,7 +595,7 @@ Tabs.Settings:AddParagraph({
     Content = "Source: " .. tostring(CONFIG.Repo or "?")
         .. " @ " .. tostring(CONFIG.Branch or "main")
         .. "\nUI: Fluent " .. tostring(Fluent.Version)
-        .. "\nDex & Cobalt: lazy load dari repo",
+        .. "\nExplorer & Remote Spy: native, tanpa library eksternal",
 })
 
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)

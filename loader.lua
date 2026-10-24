@@ -20,6 +20,7 @@
 local CONFIG = {
     Repo = "muhammadrisky45670-stack/Axium",
     Branch = "main",
+    Ref = "", -- diisi otomatis dari getgenv().AxiumRef; kalau ada, semua file diambil dari commit itu
     SubPath = "", -- file ada di root repo
     Entry = "main.lua",
 
@@ -35,6 +36,7 @@ local CONFIG = {
 }
 
 if getgenv().AxiumDebug ~= nil then CONFIG.Debug = getgenv().AxiumDebug end
+if getgenv().AxiumRef ~= nil then CONFIG.Ref = tostring(getgenv().AxiumRef) end
 getgenv().AxiumConfig = CONFIG
 
 local function log(...)
@@ -46,7 +48,7 @@ local function log(...)
     print("[Axium] " .. table.concat(parts, " "))
 end
 
-log("loader start | repo=" .. CONFIG.Repo .. " | branch=" .. tostring(CONFIG.Branch)
+log("loader start | repo=" .. CONFIG.Repo .. " | ref=" .. tostring(CONFIG.Ref ~= "" and CONFIG.Ref or CONFIG.Branch)
     .. " | sub=" .. tostring(CONFIG.SubPath ~= "" and CONFIG.SubPath or "(root)"))
 
 --========================================
@@ -74,7 +76,7 @@ end
 --========================================
 
 local function cachePath(path)
-    local scope = (CONFIG.Repo .. "_" .. tostring(CONFIG.Branch) .. "_" .. tostring(CONFIG.SubPath or ""))
+    local scope = (CONFIG.Repo .. "_" .. tostring(CONFIG.Ref ~= "" and CONFIG.Ref or CONFIG.Branch) .. "_" .. tostring(CONFIG.SubPath or ""))
         :gsub("[^%w]", "_")
     return CONFIG.CacheFolder .. "/" .. scope .. "__" .. (path:gsub("[/\\]", "_")) .. ".cache"
 end
@@ -169,7 +171,8 @@ local function fetchSource(path, force)
 
     local problems = {}
     for _, template in ipairs(CONFIG.Mirrors) do
-        local url = string.format(template, CONFIG.Repo, CONFIG.Branch, relative)
+        local ref = (CONFIG.Ref ~= "" and CONFIG.Ref) or CONFIG.Branch
+        local url = string.format(template, CONFIG.Repo, ref, relative)
         log("GET " .. url)
         local ok, body = pcall(httpGet, url)
 

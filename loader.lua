@@ -10,11 +10,11 @@
     Cara pakai:
         loadstring(game:HttpGet("https://raw.githubusercontent.com/muhammadrisky45670-stack/Axium/main/loader.lua"))()
 
-    Catatan penting soal cache:
-        Cache hanya menerima file yang benar-benar bisa dikompilasi. Kalau
-        suatu URL mengembalikan halaman error (HTML/teks 400/404), isinya
-        dibuang, tidak disimpan. Cache juga dipisah per repo+branch, jadi
-        salah isi CONFIG.Repo tidak bisa lagi merusak cache repo yang benar.
+    Debug: setiap langkah dicetak ke console executor dengan prefix [Axium].
+    Matikan lewat  getgenv().AxiumDebug = false  sebelum menjalankan loader.
+
+    Cache hanya menerima file yang benar-benar bisa dikompilasi, dan namanya
+    dipisah per repo+branch, jadi halaman error tidak bisa lagi meracuni cache.
 ]]
 
 local CONFIG = {
@@ -25,6 +25,7 @@ local CONFIG = {
 
     CacheTTL = 300, -- detik; 0 = cache dimatikan
     CacheFolder = "LuvioHub/AxiumCache",
+    Debug = true,
 
     Mirrors = {
         "https://raw.githubusercontent.com/%s/%s/%s",
@@ -33,7 +34,20 @@ local CONFIG = {
     },
 }
 
+if getgenv().AxiumDebug ~= nil then CONFIG.Debug = getgenv().AxiumDebug end
 getgenv().AxiumConfig = CONFIG
+
+local function log(...)
+    if not CONFIG.Debug then return end
+    local parts = {}
+    for index = 1, select("#", ...) do
+        parts[index] = tostring(select(index, ...))
+    end
+    print("[Axium] " .. table.concat(parts, " "))
+end
+
+log("loader start | repo=" .. CONFIG.Repo .. " | branch=" .. tostring(CONFIG.Branch)
+    .. " | sub=" .. tostring(CONFIG.SubPath ~= "" and CONFIG.SubPath or "(root)"))
 
 --========================================
 -- HTTP
@@ -60,7 +74,6 @@ end
 --========================================
 
 local function cachePath(path)
-    -- ikut repo + branch + subpath, supaya repo salah tidak menimpa cache repo benar
     local scope = (CONFIG.Repo .. "_" .. tostring(CONFIG.Branch) .. "_" .. tostring(CONFIG.SubPath or ""))
         :gsub("[^%w]", "_")
     return CONFIG.CacheFolder .. "/" .. scope .. "__" .. (path:gsub("[/\\]", "_")) .. ".cache"
@@ -102,8 +115,6 @@ local function writeCache(path, body)
     end)
 end
 
--- buang cache lama (format sebelum repo ikut di nama file), karena bisa berisi
--- halaman error dari percobaan sebelumnya
 pcall(function()
     if typeof(isfile) ~= "function" or typeof(delfile) ~= "function" then return end
     local legacy = {
@@ -114,10 +125,15 @@ pcall(function()
         "lib_cobalt.lua.cache",
         "lib_fluent.lua.cache",
     }
+    local removed = 0
     for _, name in ipairs(legacy) do
         local file = CONFIG.CacheFolder .. "/" .. name
-        if isfile(file) then delfile(file) end
+        if isfile(file) then
+            delfile(file)
+            removed = removed + 1
+        end
     end
+    if removed > 0 then log("cache lama dibersihkan: " .. removed .. " file") end
 end)
 
 function getgenv().AxiumClearCache()
@@ -138,9 +154,10 @@ local function fetchSource(path, force)
         if cached and #cached > 0 then
             local chunk = loadstring(cached)
             if chunk then
+                log("cache hit: " .. path .. " (" .. #cached .. " bytes)")
                 return cached, "cache", chunk
             end
-            -- cache rusak / berisi halaman error: hapus, ambil ulang dari internet
+            log("cache rusak, dihapus: " .. path)
             deleteCache(path)
         end
     end
@@ -153,16 +170,20 @@ local function fetchSource(path, force)
     local problems = {}
     for _, template in ipairs(CONFIG.Mirrors) do
         local url = string.format(template, CONFIG.Repo, CONFIG.Branch, relative)
+        log("GET " .. url)
         local ok, body = pcall(httpGet, url)
 
         if ok and typeof(body) == "string" and #body > 0 and not body:find("404: Not Found", 1, true) then
             local chunk, compileError = loadstring(body)
             if chunk then
+                log("  ok " .. #body .. " bytes")
                 writeCache(path, body)
                 return body, url, chunk
             end
+            log("  bukan Lua, dilewati: " .. tostring(compileError))
             problems[#problems + 1] = url .. "  ->  " .. tostring(compileError)
         else
+            log("  gagal: " .. tostring(ok and "body kosong / 404" or body))
             problems[#problems + 1] = url .. "  ->  " .. tostring(ok and "body kosong / 404" or body)
         end
     end
@@ -190,6 +211,18 @@ if not chunk then
     error("Axium loader: " .. CONFIG.Entry .. " tidak bisa dikompilasi.", 0)
 end
 
+log("main.lua siap (" .. tostring(origin) .. "), menjalankan...")
+
+local ok, result = pcall(chunk)
+if not ok then
+    local trace = tostring(result)
+    if typeof(debug) == "table" and typeof(debug.traceback) == "function" then
+        trace = debug.traceback(tostring(result), 2)
+    end
+    error("Axium loader: error saat menjalankan " .. CONFIG.Entry .. ":\n" .. trace, 0)
+end
+
 getgenv().AxiumLoaded = true
 getgenv().AxiumOrigin = origin
-return chunk()
+log("selesai.")
+return result

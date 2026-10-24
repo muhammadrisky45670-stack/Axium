@@ -26,21 +26,80 @@ local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
 --========================================
+-- FATAL HANDLER (biar gagal tidak senyap)
+--========================================
+local function fatal(stage, err)
+    local message = "[Axium] " .. stage .. ": " .. tostring(err)
+    warn(message)
+
+    pcall(function()
+        local parent = game:GetService("CoreGui")
+        if type(gethui) == "function" then
+            local okHidden, hidden = pcall(gethui)
+            if okHidden and hidden then parent = hidden end
+        end
+
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "AxiumFatal"
+        gui.ResetOnSpawn = false
+
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.fromOffset(430, 100)
+        frame.Position = UDim2.new(0, 24, 0, 24)
+        frame.BackgroundColor3 = Color3.fromRGB(110, 18, 18)
+        frame.BorderSizePixel = 0
+        frame.Parent = gui
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -20, 1, -20)
+        label.Position = UDim2.fromOffset(10, 10)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextYAlignment = Enum.TextYAlignment.Top
+        label.TextWrapped = true
+        label.TextSize = 13
+        label.Font = Enum.Font.Code
+        label.Text = "Axium gagal memuat\n" .. stage .. "\n\n" .. string.sub(tostring(err), 1, 300)
+        label.Parent = frame
+
+        gui.Parent = parent
+    end)
+
+    error(message, 0)
+end
+
+--========================================
 -- UI LIBRARY
 --========================================
-local Fluent = loadstring(AxiumFetch("lib/fluent.lua"))()
-local SaveManager = loadstring(AxiumFetch("lib/fluent_savemanager.lua"))()
-local InterfaceManager = loadstring(AxiumFetch("lib/fluent_interfacemanager.lua"))()
+local okFluent, Fluent = pcall(function()
+    return loadstring(AxiumFetch("lib/fluent.lua"))()
+end)
+if not okFluent then fatal("load lib/fluent.lua", Fluent) end
 
-local Window = Fluent:CreateWindow({
-    Title = "Axium",
-    SubTitle = "by Luvio · Fluent " .. tostring(Fluent.Version),
-    TabWidth = 160,
-    Size = UDim2.fromOffset(600, 470),
-    Acrylic = CONFIG.Acrylic,
-    Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.RightShift,
-})
+local okSaveManager, SaveManager = pcall(function()
+    return loadstring(AxiumFetch("lib/fluent_savemanager.lua"))()
+end)
+if not okSaveManager then fatal("load lib/fluent_savemanager.lua", SaveManager) end
+
+local okInterfaceManager, InterfaceManager = pcall(function()
+    return loadstring(AxiumFetch("lib/fluent_interfacemanager.lua"))()
+end)
+if not okInterfaceManager then fatal("load lib/fluent_interfacemanager.lua", InterfaceManager) end
+
+local okWindow, Window = pcall(function()
+    return Fluent:CreateWindow({
+        Title = "Axium",
+        SubTitle = "by Luvio · Fluent " .. tostring(Fluent.Version),
+        TabWidth = 160,
+        Size = UDim2.fromOffset(600, 470),
+        Acrylic = CONFIG.Acrylic,
+        Theme = "Dark",
+        MinimizeKey = Enum.KeyCode.RightShift,
+    })
+end)
+if not okWindow then fatal("Fluent:CreateWindow", Window) end
+print("[Axium] window dibuat (Fluent " .. tostring(Fluent.Version) .. ")")
 
 local Tabs = {
     Scripts = Window:AddTab({ Title = "Scripts", Icon = "file-code-2" }),
@@ -429,6 +488,8 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 
 Window:SelectTab(1)
 pcall(function() SaveManager:LoadAutoloadConfig() end)
+
+print("[Axium] UI siap — tab dan fitur terpasang.")
 
 Fluent:Notify({
     Title = "Axium",

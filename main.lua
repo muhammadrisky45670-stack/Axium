@@ -322,7 +322,7 @@ local serverPanel = panel(Tabs.Scripts, "Right", "Server")
 local recorder = { active = false, data = {} }
 
 utilityPanel:AddButton({
-    Title = "CFrame Recorder â€” Start",
+    Title = "CFrame Recorder - Start",
     Description = "Rekam posisi tiap 0.5 dtk (maks 5 menit)",
     Callback = function()
         if recorder.active then
@@ -351,7 +351,7 @@ utilityPanel:AddButton({
 })
 
 utilityPanel:AddButton({
-    Title = "CFrame Recorder â€” Stop & Copy",
+    Title = "CFrame Recorder - Stop & Copy",
     Description = "Hentikan rekaman, salin hasil ke clipboard",
     Callback = function()
         recorder.active = false
@@ -650,7 +650,7 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 Window:SelectTab(1)
 pcall(function() SaveManager:LoadAutoloadConfig() end)
 
-print("[Axium] UI siap â€” tab dan fitur terpasang.")
+print("[Axium] UI siap - tab dan fitur terpasang.")
 
 Fluent:Notify({
     Title = "Axium",

@@ -136,7 +136,7 @@ pcall(function()
     if removed > 0 then log("cache lama dibersihkan: " .. removed .. " file") end
 end)
 
-function getgenv().AxiumClearCache()
+getgenv().AxiumClearCache = function()
     pcall(function()
         for _, name in ipairs({ "main.lua", "loader.lua", "lib/windui.lua", "lib/dex.lua", "lib/cobalt.lua", "lib/fluent.lua", "lib/fluent_savemanager.lua", "lib/fluent_interfacemanager.lua" }) do
             deleteCache(name)
